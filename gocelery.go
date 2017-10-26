@@ -62,7 +62,15 @@ func (gocelery *GoCelery) Close() {
 // EnqueueInQueue adds a task to queue to be executed immediately. If ignoreResult is true
 // the function returns immediately with a nil channel returned. Otherwise, a result
 // channel is returned so client can wait for the result.
-func (gocelery *GoCelery) EnqueueInQueue(queueName string, taskName string, args []interface{}, ignoreResult bool) (chan *TaskResult, error) {
+func (gocelery *GoCelery) EnqueueInQueue(worker Worker, ignoreResult bool, args ...interface{}) (chan *TaskResult, error) {
+	var (
+		taskName  = worker.TaskName()
+		queueName = worker.Queue()
+	)
+	if queueName == "" {
+		queueName = DefaultQueue
+	}
+
 	// log.Debugf("Enqueuing [%s] in queue [%s]", taskName, queueName)
 	task := &Task{
 		Task:    taskName,
@@ -101,26 +109,13 @@ func (gocelery *GoCelery) EnqueueInQueue(queueName string, taskName string, args
 	return taskResult, nil
 }
 
-// Enqueue adds a task to queue to be executed immediately. If ignoreResult is true
-// the function returns immediately with a nil channel returned. Otherwise, a result
-// channel is returned so client can wait for the result.
-func (gocelery *GoCelery) Enqueue(taskName string, args []interface{}, ignoreResult bool) (chan *TaskResult, error) {
-	return gocelery.EnqueueInQueue(DefaultQueue, taskName, args, ignoreResult)
-}
-
 // EnqueueInQueueWithSchedule adds a task that is scheduled repeatedly.
 // Schedule is specified in a string with cron format
-func (gocelery *GoCelery) EnqueueInQueueWithSchedule(spec string, queueName string, taskName string, args []interface{}) error {
+func (gocelery *GoCelery) EnqueueInQueueWithSchedule(spec string, worker Worker, args ...interface{}) error {
 	return gocelery.cron.AddFunc(spec, func() {
 		// log.Infof("Running scheduled task %s: %s", spec, taskName)
-		gocelery.EnqueueInQueue(queueName, taskName, args, true)
+		gocelery.EnqueueInQueue(worker, true, args...)
 	})
-}
-
-// EnqueueWithSchedule adds a task that is scheduled repeatedly.
-// Schedule is specified in a string with cron format
-func (gocelery *GoCelery) EnqueueWithSchedule(spec string, queueName string, taskName string, args []interface{}) error {
-	return gocelery.EnqueueInQueueWithSchedule(spec, DefaultQueue, taskName, args)
 }
 
 // StartWorkers start running the workers with default queue
