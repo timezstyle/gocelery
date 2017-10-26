@@ -5,7 +5,6 @@ import "sort"
 // Worker is the definition of task execution
 type Worker interface {
 	Queue() string
-	TaskName() string
 	Execute(*Task) (interface{}, error)
 }
 
@@ -17,8 +16,8 @@ const (
 )
 
 // RegisterWorker registers the worker with given task name
-func RegisterWorker(worker Worker) {
-	workerRegistery[worker.TaskName()] = worker
+func RegisterWorker(name string, worker Worker) {
+	workerRegistery[name] = worker
 }
 
 // RegisteredWorkers List all registered workers
