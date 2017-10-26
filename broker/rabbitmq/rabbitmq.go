@@ -5,8 +5,7 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
-	"github.com/taoh/gocelery/broker"
+	"github.com/timezstyle/gocelery/broker"
 
 	// ampq broker
 	"github.com/streadway/amqp"
@@ -46,7 +45,7 @@ func (b *RabbitMqBroker) String() string {
 // Connect to rabbitmq
 func (b *RabbitMqBroker) Connect(uri string) error {
 	b.amqpURL = uri
-	log.Debugf("Dialing [%s]", uri)
+	// log.Debugf("Dialing [%s]", uri)
 	// dial the server
 	conn, err := amqp.Dial(b.amqpURL)
 	if err != nil {
@@ -62,7 +61,7 @@ func (b *RabbitMqBroker) Connect(uri string) error {
 
 	b.resultsChannels = make(map[string]*amqp.Channel)
 
-	log.Debug("Connected to rabbitmq")
+	// log.Debug("Connected to rabbitmq")
 	//create exchanges
 	// note that the exchange must be the same as celery to avoid fatal errors
 	err = b.newExchange(DefaultExchange, "direct", true, false)
@@ -76,14 +75,14 @@ func (b *RabbitMqBroker) Connect(uri string) error {
 		return err
 	}
 
-	log.Debug("Created exchanges")
+	// log.Debug("Created exchanges")
 	b.queues = make(map[string]bool)
 	return nil
 }
 
 // Close the broker and cleans up resources
 func (b *RabbitMqBroker) Close() error {
-	log.Debug("Closing broker: ", b.amqpURL)
+	// log.Debug("Closing broker: ", b.amqpURL)
 	return b.connection.Close()
 }
 
@@ -93,7 +92,7 @@ func (b *RabbitMqBroker) GetTasks(queueName string) <-chan *broker.Message {
 	b.Lock()
 	if val, exists := b.queues[queueName]; !exists || !val {
 		if err := b.ensureQueueBind(queueName); err != nil {
-			log.Error("Failed to bind to queue: ", err)
+			// log.Error("Failed to bind to queue: ", err)
 			return nil
 		}
 		b.queues[queueName] = true
@@ -103,19 +102,19 @@ func (b *RabbitMqBroker) GetTasks(queueName string) <-chan *broker.Message {
 	msg := make(chan *broker.Message)
 	go func() {
 		// fetch messages
-		log.Infof("Waiting for tasks at: %s", b.amqpURL)
+		// log.Infof("Waiting for tasks at: %s", b.amqpURL)
 		deliveries, err := b.channel.Consume(
 			queueName,
 			"",   // Consumer
 			true, // AutoAck
 			false, false, false, nil)
 		if err != nil {
-			log.Error("Failed to consume task messages: ", err)
+			// log.Error("Failed to consume task messages: ", err)
 			//TODO: deal with channel failure
 			return
 		}
 		for delivery := range deliveries {
-			log.Debug("Got a message!")
+			// log.Debug("Got a message!")
 			msg <- &broker.Message{
 				ContentType: delivery.ContentType,
 				Body:        delivery.Body,
@@ -162,14 +161,14 @@ func (b *RabbitMqBroker) channelForTask(name string) *amqp.Channel {
 func (b *RabbitMqBroker) GetTaskResult(taskID string) <-chan *broker.Message {
 	msg := make(chan *broker.Message)
 	// fetch messages
-	log.Debug("Waiting for Task Result Messages: ", taskID)
+	// log.Debug("Waiting for Task Result Messages: ", taskID)
 	channel := b.channelForTask(taskID)
 	if channel == nil {
-		log.Error("Cannot get channel for task")
+		// log.Error("Cannot get channel for task")
 		return nil
 	}
 
-	log.Debug("Creating queues for Task:", taskID)
+	// log.Debug("Creating queues for Task:", taskID)
 	// create task result queue
 	var arguments amqp.Table
 	// queueExpires := viper.GetInt("resultQueueExpires") //ARGV:
@@ -177,10 +176,10 @@ func (b *RabbitMqBroker) GetTaskResult(taskID string) <-chan *broker.Message {
 	// 	arguments = amqp.Table{"x-expires": queueExpires}
 	// }
 	if err := b.newQueue(taskID, true, true, arguments); err != nil {
-		log.Error("Failed to create queue: ", err)
+		// log.Error("Failed to create queue: ", err)
 		return nil
 	}
-	log.Debug("Created Task Result Queue")
+	// log.Debug("Created Task Result Queue")
 	// bind queue to exchange
 	if err := b.channelForTask(taskID).QueueBind(
 		taskID,          // queue name
@@ -201,14 +200,14 @@ func (b *RabbitMqBroker) GetTaskResult(taskID string) <-chan *broker.Message {
 
 		// delete channel
 		if err != nil {
-			log.Error("Failed to consume task result messages: ", taskID, " error: ", err)
+			// log.Error("Failed to consume task result messages: ", taskID, " error: ", err)
 			//b.channel.QueueUnbind(taskID, taskID, "celeryresults", nil)
 			// b.channel.Cancel(taskID, false)
 			return
 		}
 		delivery := <-deliveries
 		if delivery.Body == nil {
-			log.Error("Got a task result message: ", taskID, " body: ", string(delivery.Body))
+			// log.Error("Got a task result message: ", taskID, " body: ", string(delivery.Body))
 		}
 		msg <- &broker.Message{
 			ContentType: delivery.ContentType,
@@ -248,7 +247,7 @@ func (b *RabbitMqBroker) ensureQueueBind(queueName string) error {
 	); err != nil {
 		return err
 	}
-	log.Debug("Queue is bound to exchange")
+	// log.Debug("Queue is bound to exchange")
 	return nil
 }
 
@@ -258,7 +257,7 @@ func (b *RabbitMqBroker) PublishTask(queueName string, taskID string, message *b
 	b.Lock()
 	if val, exists := b.queues[queueName]; !exists || !val {
 		if err := b.ensureQueueBind(queueName); err != nil {
-			log.Error("Failed to bind to queue: ", err)
+			// log.Error("Failed to bind to queue: ", err)
 			return err
 		}
 		b.queues[queueName] = true
@@ -275,9 +274,9 @@ func (b *RabbitMqBroker) PublishTask(queueName string, taskID string, message *b
 	if !ignoreResults {
 
 	} else {
-		log.Debug("Task Result ignored")
+		// log.Debug("Task Result ignored")
 	}
-	log.Debug("Publishing Task to queue")
+	// log.Debug("Publishing Task to queue")
 	routingKey := queueName // routing key is the same as queuename
 	return b.channel.Publish(DefaultExchange, routingKey, false, false, msg)
 }
@@ -290,7 +289,7 @@ func (b *RabbitMqBroker) PublishTaskResult(key string, message *broker.Message) 
 		ContentType:  message.ContentType,
 		Body:         message.Body,
 	}
-	log.Debug("Publishing Task Result:", key)
+	// log.Debug("Publishing Task Result:", key)
 	return b.channel.Publish("celeryresults", key, false, false, msg)
 }
 

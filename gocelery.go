@@ -2,19 +2,14 @@ package gocelery
 
 import (
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/robfig/cron"
 
-	// import nats broker
-	_ "github.com/taoh/gocelery/broker/nats"
 	// import rabbitmq broker
-	_ "github.com/taoh/gocelery/broker/rabbitmq"
-	// import redis broker
-	_ "github.com/taoh/gocelery/broker/redis"
+	_ "github.com/timezstyle/gocelery/broker/rabbitmq"
+
 	"github.com/twinj/uuid"
 )
 
@@ -32,8 +27,8 @@ type GoCelery struct {
 
 // New creates a GoCelery instance with given config
 func New(config *Config) *GoCelery {
-	if config.LogLevel == "" {
-		config.LogLevel = "info"
+	if len(config.Queue) == 0 {
+		config.Queue = []string{DefaultQueue}
 	}
 	if config.BrokerURL == "" {
 		config.BrokerURL = "amqp://localhost"
@@ -42,11 +37,10 @@ func New(config *Config) *GoCelery {
 		config: config,
 		workerManager: &workerManager{
 			brokerURL: config.BrokerURL,
+			queue:     config.Queue,
 		},
 		cron: cron.New(),
 	}
-	// set up log level
-	setupLogLevel(config)
 
 	// try connect to worker
 	if gocelery.workerManager.Connect() != nil {
@@ -65,24 +59,11 @@ func (gocelery *GoCelery) Close() {
 	gocelery.cron.Stop()
 }
 
-// set up log level. default is error
-func setupLogLevel(config *Config) {
-	log.SetOutput(os.Stderr)
-	level, err := log.ParseLevel(config.LogLevel)
-	if err != nil {
-		log.Warnf("Failed to set log level: %s. Use default: error", config.LogLevel)
-		level = log.ErrorLevel
-	}
-	log.SetLevel(level)
-
-	log.Debug("Log Level: ", level)
-}
-
 // EnqueueInQueue adds a task to queue to be executed immediately. If ignoreResult is true
 // the function returns immediately with a nil channel returned. Otherwise, a result
 // channel is returned so client can wait for the result.
 func (gocelery *GoCelery) EnqueueInQueue(queueName string, taskName string, args []interface{}, ignoreResult bool) (chan *TaskResult, error) {
-	log.Debugf("Enqueuing [%s] in queue [%s]", taskName, queueName)
+	// log.Debugf("Enqueuing [%s] in queue [%s]", taskName, queueName)
 	task := &Task{
 		Task:    taskName,
 		Args:    args,
@@ -99,7 +80,7 @@ func (gocelery *GoCelery) EnqueueInQueue(queueName string, taskName string, args
 	var wg sync.WaitGroup
 	wg.Add(1)
 	if !ignoreResult {
-		log.Debug("Waiting for Task Result: ", task.ID)
+		// log.Debug("Waiting for Task Result: ", task.ID)
 		taskResult = gocelery.workerManager.GetTaskResult(task)
 		wg.Done()
 	} else {
@@ -107,13 +88,13 @@ func (gocelery *GoCelery) EnqueueInQueue(queueName string, taskName string, args
 	}
 
 	wg.Wait()
-	log.Debug("Publishing task: ", task.ID)
+	// log.Debug("Publishing task: ", task.ID)
 	task, err := gocelery.workerManager.PublishTask(queueName, task, ignoreResult)
 	if err != nil {
 		return nil, err
 	}
 	if ignoreResult {
-		log.Debug("Task Result is ignored.")
+		// log.Debug("Task Result is ignored.")
 		return nil, nil
 	}
 
@@ -131,7 +112,7 @@ func (gocelery *GoCelery) Enqueue(taskName string, args []interface{}, ignoreRes
 // Schedule is specified in a string with cron format
 func (gocelery *GoCelery) EnqueueInQueueWithSchedule(spec string, queueName string, taskName string, args []interface{}) error {
 	return gocelery.cron.AddFunc(spec, func() {
-		log.Infof("Running scheduled task %s: %s", spec, taskName)
+		// log.Infof("Running scheduled task %s: %s", spec, taskName)
 		gocelery.EnqueueInQueue(queueName, taskName, args, true)
 	})
 }
@@ -142,13 +123,7 @@ func (gocelery *GoCelery) EnqueueWithSchedule(spec string, queueName string, tas
 	return gocelery.EnqueueInQueueWithSchedule(spec, DefaultQueue, taskName, args)
 }
 
-// StartWorkersWithQueues start running the workers
-func (gocelery *GoCelery) StartWorkersWithQueues(queues []string) {
-	log.Info("gocelery worker started with queues %s", queues)
-	gocelery.workerManager.Start(queues)
-}
-
 // StartWorkers start running the workers with default queue
 func (gocelery *GoCelery) StartWorkers() {
-	gocelery.StartWorkersWithQueues([]string{DefaultQueue})
+	gocelery.workerManager.Start(gocelery.config.Queue)
 }

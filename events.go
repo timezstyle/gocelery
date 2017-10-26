@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/taoh/gocelery/version"
+	"github.com/timezstyle/gocelery/version"
 )
 
 var hostname, _ = os.Hostname()

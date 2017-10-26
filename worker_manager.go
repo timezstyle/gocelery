@@ -10,10 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/go-errors/errors"
-	"github.com/taoh/gocelery/broker"
-	"github.com/taoh/gocelery/serializer"
+	"github.com/timezstyle/gocelery/broker"
+	"github.com/timezstyle/gocelery/serializer"
 )
 
 // WorkerManager starts and stop worker jobs
@@ -22,6 +21,7 @@ type workerManager struct {
 	brokerURL string
 	broker    broker.Broker
 	ticker    *time.Ticker // ticker for heartbeat
+	queue     []string
 
 	taskExecuted uint64
 }
@@ -30,11 +30,11 @@ type workerManager struct {
 func (manager *workerManager) Connect() error {
 	broker, err := broker.NewBroker(manager.brokerURL)
 	if err != nil {
-		log.Fatal("Failed to connect to broker: ", err)
+		// log.Fatal("Failed to connect to broker: ", err)
 		return err
 	}
 
-	log.Debug("Connected to broker: ", manager.brokerURL)
+	// log.Debug("Connected to broker: ", manager.brokerURL)
 	manager.broker = broker
 	return nil
 }
@@ -78,11 +78,11 @@ func (manager *workerManager) Start(queues []string) {
 		<-sigs // listen to signals
 		manager.Stop()
 		manager.Close()
-		log.Info("gocelery stopped.")
+		// log.Info("gocelery stopped.")
 		done <- true // send signals to done
 	}()
 
-	log.Debug("Worker is now running")
+	// log.Debug("Worker is now running")
 
 	// now loops to wait for messages
 	manager.sendWorkerEvent(WorkerOnline)
@@ -100,10 +100,10 @@ func (manager *workerManager) Start(queues []string) {
 	for {
 		select {
 		case <-done:
-			log.Debug("Received done signal")
+			// log.Debug("Received done signal")
 			return
 		case message := <-ch:
-			log.Debug("Message type: ", message.ContentType, " body:", string(message.Body))
+			// log.Debug("Message type: ", message.ContentType, " body:", string(message.Body))
 			go func(message *broker.Message) {
 				serializer, err := serializer.NewSerializer(message.ContentType)
 				// convert message body to task
@@ -121,7 +121,7 @@ func (manager *workerManager) Start(queues []string) {
 								ContentType: message.ContentType,
 								Body:        taskEventPayload,
 							})
-						log.Debug("Processing task: ", task.Task, " ID:", task.ID)
+						// log.Debug("Processing task: ", task.Task, " ID:", task.ID)
 
 						// check eta
 						duration := time.Duration(0)
@@ -141,7 +141,7 @@ func (manager *workerManager) Start(queues []string) {
 					}
 				} else {
 					// send errors to server
-					log.Error("Cannot deserialize message:", err)
+					// log.Error("Cannot deserialize message:", err)
 				}
 			}(message)
 		}
@@ -159,9 +159,13 @@ func (manager *workerManager) PublishTask(queueName string, task *Task, ignoreRe
 		ContentType: JSON,
 		Body:        res,
 	}
-	manager.broker.PublishTask(queueName, task.ID, message, ignoreResult)
+	err = manager.broker.PublishTask(queueName, task.ID, message, ignoreResult)
+	if err != nil {
+		manager.Close()
+		manager.Connect()
+	}
 	// return the task object
-	return task, nil
+	return task, err
 }
 
 // GetTaskResult listens to celery and returns the task result for given task
@@ -177,7 +181,7 @@ func (manager *workerManager) GetTaskResult(task *Task) chan *TaskResult {
 		if message.Body != nil {
 			serializer.Deserialize(message.Body, &taskResult)
 		} else {
-			log.Errorf("Task result message is nil")
+			// log.Errorf("Task result message is nil")
 		}
 		tc <- &taskResult
 	}()
@@ -204,8 +208,13 @@ func (manager *workerManager) sendTaskEvent(eventType EventType, payload []byte)
 // Send Worker Events
 func (manager *workerManager) sendWorkerEvent(eventType EventType) {
 	workerEventPayload, _ := json.Marshal(NewWorkerEvent(eventType))
-	manager.broker.PublishTaskEvent(strings.Replace(eventType.RoutingKey(), "-", ".", -1),
+	err := manager.broker.PublishTaskEvent(strings.Replace(eventType.RoutingKey(), "-", ".", -1),
 		&broker.Message{Timestamp: time.Now(), ContentType: JSON, Body: workerEventPayload})
+	if err != nil {
+		manager.Close()
+		manager.Connect()
+		manager.Start(manager.queue)
+	}
 }
 
 func (manager *workerManager) stopHeartbeat() {
@@ -239,7 +248,7 @@ func (manager *workerManager) runTask(task *Task) (*TaskResult, error) {
 	var taskEventPayload []byte
 
 	if worker, ok := workerRegistery[task.Task]; ok {
-		log.Debug("Working on task: ", task.Task)
+		// log.Debug("Working on task: ", task.Task)
 
 		taskEventPayload, _ = serializer.Serialize(NewTaskStartedEvent(task))
 		taskEventType = TaskStarted
@@ -248,7 +257,7 @@ func (manager *workerManager) runTask(task *Task) (*TaskResult, error) {
 		// check expiration
 		if !task.Expires.IsZero() && task.Expires.Before(time.Now().UTC()) {
 			// time expired, make the task Revoked
-			log.Warn("Task has expired", task.Expires)
+			// log.Warn("Task has expired", task.Expires)
 			taskResult.Status = Revoked
 			taskError = errors.New("Task has expired")
 			taskEventPayload, _ = serializer.Serialize(NewTaskFailedEvent(task, taskResult, taskError))
@@ -260,11 +269,11 @@ func (manager *workerManager) runTask(task *Task) (*TaskResult, error) {
 
 			manager.Lock()
 			manager.taskExecuted = manager.taskExecuted + 1
-			log.Infof("Executed task [%s] [%s] [%s] in %f seconds", task.Task, task.ID, result, elapsed.Seconds())
+			// log.Infof("Executed task [%s] [%s] [%s] in %f seconds", task.Task, task.ID, result, elapsed.Seconds())
 			manager.Unlock()
 
 			if err != nil {
-				log.Errorf("Failed to execute task [%s]: %s", task.Task, err)
+				// log.Errorf("Failed to execute task [%s]: %s", task.Task, err)
 				err = errors.Wrap(err, 1)
 			}
 

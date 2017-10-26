@@ -3,8 +3,8 @@ package serializer
 import (
 	"fmt"
 
-	"github.com/taoh/gocelery/serializer/json"
-	"github.com/taoh/gocelery/serializer/pickle"
+	"github.com/timezstyle/gocelery/serializer/json"
+	"github.com/timezstyle/gocelery/serializer/pickle"
 )
 
 // Serializer converst he format

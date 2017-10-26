@@ -9,7 +9,7 @@ Roadmap
 * [x] Support submitting tasks from go
 
 ####Connection
-* [ ] Connection Recovery
+* [x] Connection Recovery
 
 ####Task
 * [ ] Retry logic

@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	log "github.com/Sirupsen/logrus"
 )
 
 // Message is the data got from broker
@@ -40,7 +38,7 @@ func NewBroker(uri string) (Broker, error) {
 	if broker, ok := brokerRegistery[scheme]; ok { // check if scheme is registered
 		err := broker.Connect(uri)
 		if err != nil {
-			log.Error("Failed to connect to broker:", err)
+			// log.Error("Failed to connect to broker:", err)
 			return nil, err
 		}
 		return broker, nil
