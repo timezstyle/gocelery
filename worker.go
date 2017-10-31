@@ -15,8 +15,19 @@ const (
 	JSON string = "application/json"
 )
 
+// RegisterQueue registers the task name with given queue
 func RegisterQueue(taskName string, queueName string) {
 	workerQueueRegistery[taskName] = queueName
+}
+
+// RegisteredQueues List all registered queues
+func RegisteredQueues() []string {
+	keys := make([]string, 0, len(workerQueueRegistery))
+	for _, queue := range workerQueueRegistery {
+		keys = append(keys, queue)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // RegisterWorker registers the worker with given task name
