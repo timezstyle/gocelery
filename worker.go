@@ -2,22 +2,26 @@ package gocelery
 
 import "sort"
 
-// Worker is the definition of task execution
-type Worker interface {
-	Queue() string
-	Execute(*Task) (interface{}, error)
-}
+// Execute is the definition of task execution
+type Execute = func(*Task) (interface{}, error)
 
-var workerRegistery = make(map[string]Worker)
+var (
+	workerRegistery      = make(map[string]Execute)
+	workerQueueRegistery = make(map[string]string)
+)
 
 // Constants
 const (
 	JSON string = "application/json"
 )
 
+func RegisterQueue(taskName string, queueName string) {
+	workerQueueRegistery[taskName] = queueName
+}
+
 // RegisterWorker registers the worker with given task name
-func RegisterWorker(name string, worker Worker) {
-	workerRegistery[name] = worker
+func RegisterWorker(taskName string, execute Execute) {
+	workerRegistery[taskName] = execute
 }
 
 // RegisteredWorkers List all registered workers

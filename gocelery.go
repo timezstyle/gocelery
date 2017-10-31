@@ -62,15 +62,7 @@ func (gocelery *GoCelery) Close() {
 // EnqueueInQueue adds a task to queue to be executed immediately. If ignoreResult is true
 // the function returns immediately with a nil channel returned. Otherwise, a result
 // channel is returned so client can wait for the result.
-func (gocelery *GoCelery) EnqueueInQueue(worker Worker, ignoreResult bool, args ...interface{}) (chan *TaskResult, error) {
-	var (
-		taskName  = worker.TaskName()
-		queueName = worker.Queue()
-	)
-	if queueName == "" {
-		queueName = DefaultQueue
-	}
-
+func (gocelery *GoCelery) EnqueueInQueue(queueName string, taskName string, ignoreResult bool, args ...interface{}) (chan *TaskResult, error) {
 	// log.Debugf("Enqueuing [%s] in queue [%s]", taskName, queueName)
 	task := &Task{
 		Task:    taskName,
@@ -109,13 +101,29 @@ func (gocelery *GoCelery) EnqueueInQueue(worker Worker, ignoreResult bool, args 
 	return taskResult, nil
 }
 
+func (gocelery *GoCelery) Enqueue(taskName string, ignoreResult bool, args ...interface{}) (chan *TaskResult, error) {
+	queueName, ok := workerQueueRegistery[taskName]
+	if !ok {
+		queueName = DefaultQueue
+	}
+	return gocelery.EnqueueInQueue(queueName, taskName, ignoreResult, args...)
+}
+
 // EnqueueInQueueWithSchedule adds a task that is scheduled repeatedly.
 // Schedule is specified in a string with cron format
-func (gocelery *GoCelery) EnqueueInQueueWithSchedule(spec string, worker Worker, args ...interface{}) error {
+func (gocelery *GoCelery) EnqueueInQueueWithSchedule(spec string, queueName string, taskName string, args ...interface{}) error {
 	return gocelery.cron.AddFunc(spec, func() {
 		// log.Infof("Running scheduled task %s: %s", spec, taskName)
-		gocelery.EnqueueInQueue(worker, true, args...)
+		gocelery.EnqueueInQueue(queueName, taskName, true, args...)
 	})
+}
+
+func (gocelery *GoCelery) EnqueueWithSchedule(spec string, taskName string, args ...interface{}) error {
+	queueName, ok := workerQueueRegistery[taskName]
+	if !ok {
+		queueName = DefaultQueue
+	}
+	return gocelery.EnqueueInQueueWithSchedule(spec, queueName, taskName, args...)
 }
 
 // StartWorkers start running the workers with default queue

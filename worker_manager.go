@@ -247,7 +247,7 @@ func (manager *workerManager) runTask(task *Task) (*TaskResult, error) {
 	var taskError error
 	var taskEventPayload []byte
 
-	if worker, ok := workerRegistery[task.Task]; ok {
+	if execute, ok := workerRegistery[task.Task]; ok {
 		// log.Debug("Working on task: ", task.Task)
 
 		taskEventPayload, _ = serializer.Serialize(NewTaskStartedEvent(task))
@@ -264,7 +264,7 @@ func (manager *workerManager) runTask(task *Task) (*TaskResult, error) {
 			taskEventType = TaskRevoked
 		} else {
 			start := time.Now()
-			result, err := worker.Execute(task)
+			result, err := execute(task)
 			elapsed := time.Since(start)
 
 			manager.Lock()
