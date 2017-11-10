@@ -3,11 +3,9 @@ package gocelery
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/signal"
+	"log"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -30,16 +28,16 @@ type workerManager struct {
 func (manager *workerManager) Connect() error {
 	broker, err := broker.NewBroker(manager.brokerURL)
 	if err != nil {
-		// log.Fatal("Failed to connect to broker: ", err)
+		log.Fatal("Failed to connect to broker: ", err)
 		return err
 	}
 
-	// log.Debug("Connected to broker: ", manager.brokerURL)
+	log.Println("Connected to broker: ", manager.brokerURL)
 	manager.broker = broker
 	return nil
 }
 
-func merge(done <-chan bool, cs ...<-chan *broker.Message) <-chan *broker.Message {
+func merge(cs ...<-chan *broker.Message) <-chan *broker.Message {
 	var wg sync.WaitGroup
 	out := make(chan *broker.Message)
 
@@ -49,7 +47,7 @@ func merge(done <-chan bool, cs ...<-chan *broker.Message) <-chan *broker.Messag
 		for n := range c {
 			select {
 			case out <- n:
-			case <-done:
+				// case <-done:
 			}
 		}
 		wg.Done()
@@ -70,20 +68,19 @@ func merge(done <-chan bool, cs ...<-chan *broker.Message) <-chan *broker.Messag
 
 // Start worker runs the worker command
 func (manager *workerManager) Start(queues []string) {
-	sigs := make(chan os.Signal, 1)
-	done := make(chan bool, 1)
+	// sigs := make(chan os.Signal, 1)
+	// done := make(chan bool, 1)
 
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigs // listen to signals
-		manager.Stop()
-		manager.Close()
-		// log.Info("gocelery stopped.")
-		done <- true // send signals to done
-	}()
+	// signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	// go func() {
+	// 	<-sigs // listen to signals
+	// 	manager.Stop()
+	// 	manager.Close()
+	// 	log.Println("gocelery stopped.")
+	// 	done <- true // send signals to done
+	// }()
 
-	// log.Debug("Worker is now running")
-
+	log.Println("Worker is now running")
 	// now loops to wait for messages
 	manager.sendWorkerEvent(WorkerOnline)
 
@@ -96,14 +93,18 @@ func (manager *workerManager) Start(queues []string) {
 		taskChannel := manager.broker.GetTasks(queue)
 		taskChannels = append(taskChannels, taskChannel)
 	}
-	ch := merge(done, taskChannels...)
+	ch := merge(taskChannels...)
 	for {
 		select {
-		case <-done:
-			// log.Debug("Received done signal")
-			return
-		case message := <-ch:
-			// log.Debug("Message type: ", message.ContentType, " body:", string(message.Body))
+		// case <-done:
+		// 	// log.Debug("Received done signal")
+		// 	return
+		case message, ok := <-ch:
+			if !ok {
+				log.Println("channel close")
+				return
+			}
+			// log.Println("Message type: ", message.ContentType, " body:", string(message.Body))
 			go func(message *broker.Message) {
 				serializer, err := serializer.NewSerializer(message.ContentType)
 				// convert message body to task
@@ -193,7 +194,7 @@ func (manager *workerManager) startHeartbeat() {
 	manager.ticker = ticker
 	go func() {
 		for _ = range ticker.C {
-			// log.Debug("Sent heartbeat at: ", t)
+			// log.Println("Sent heartbeat at:", t)
 			// send heartbeat
 			manager.sendWorkerEvent(WorkerHeartbeat)
 		}
@@ -211,6 +212,7 @@ func (manager *workerManager) sendWorkerEvent(eventType EventType) {
 	err := manager.broker.PublishTaskEvent(strings.Replace(eventType.RoutingKey(), "-", ".", -1),
 		&broker.Message{Timestamp: time.Now(), ContentType: JSON, Body: workerEventPayload})
 	if err != nil {
+		log.Println(err)
 		manager.Close()
 		manager.Connect()
 		manager.Start(manager.queue)
@@ -248,7 +250,7 @@ func (manager *workerManager) runTask(task *Task) (*TaskResult, error) {
 	var taskEventPayload []byte
 
 	if execute, ok := workerRegistery[task.Task]; ok {
-		// log.Debug("Working on task: ", task.Task)
+		// log.Println("Working on task: ", task.Task)
 
 		taskEventPayload, _ = serializer.Serialize(NewTaskStartedEvent(task))
 		taskEventType = TaskStarted
@@ -257,7 +259,7 @@ func (manager *workerManager) runTask(task *Task) (*TaskResult, error) {
 		// check expiration
 		if !task.Expires.IsZero() && task.Expires.Before(time.Now().UTC()) {
 			// time expired, make the task Revoked
-			// log.Warn("Task has expired", task.Expires)
+			// log.Println("Task has expired", task.Expires)
 			taskResult.Status = Revoked
 			taskError = errors.New("Task has expired")
 			taskEventPayload, _ = serializer.Serialize(NewTaskFailedEvent(task, taskResult, taskError))
@@ -269,11 +271,11 @@ func (manager *workerManager) runTask(task *Task) (*TaskResult, error) {
 
 			manager.Lock()
 			manager.taskExecuted = manager.taskExecuted + 1
-			// log.Infof("Executed task [%s] [%s] [%s] in %f seconds", task.Task, task.ID, result, elapsed.Seconds())
+			// log.Printf("Executed task [%s] [%s] [%s] in %f seconds\n", task.Task, task.ID, result, elapsed.Seconds())
 			manager.Unlock()
 
 			if err != nil {
-				// log.Errorf("Failed to execute task [%s]: %s", task.Task, err)
+				// log.Printf("Failed to execute task [%s]: %s\n", task.Task, err)
 				err = errors.Wrap(err, 1)
 			}
 
