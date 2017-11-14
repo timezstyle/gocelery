@@ -16,10 +16,11 @@ import (
 // WorkerManager starts and stop worker jobs
 type workerManager struct {
 	sync.Mutex
-	brokerURL string
-	broker    broker.Broker
-	ticker    *time.Ticker // ticker for heartbeat
-	queue     []string
+	brokerURL  string
+	broker     broker.Broker
+	ticker     *time.Ticker // ticker for heartbeat
+	queue      []string
+	connecting bool
 
 	taskExecuted uint64
 }
@@ -149,6 +150,16 @@ func (manager *workerManager) Start(queues []string) {
 	}
 }
 
+func (manager *workerManager) Reconnect() {
+	if !manager.connecting {
+		manager.connecting = true
+		manager.Close()
+		err := manager.broker.Connect(manager.brokerURL)
+		log.Println("connect to", manager.brokerURL, err)
+		manager.connecting = false
+	}
+}
+
 // PublishTask sends a task to task queue as a client
 func (manager *workerManager) PublishTask(queueName string, task *Task, ignoreResult bool) (*Task, error) {
 	res, err := json.Marshal(task)
@@ -162,8 +173,7 @@ func (manager *workerManager) PublishTask(queueName string, task *Task, ignoreRe
 	}
 	err = manager.broker.PublishTask(queueName, task.ID, message, ignoreResult)
 	if err != nil {
-		manager.Close()
-		manager.Connect()
+		manager.Reconnect()
 	}
 	// return the task object
 	return task, err
