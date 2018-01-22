@@ -16,20 +16,23 @@ import (
 // WorkerManager starts and stop worker jobs
 type workerManager struct {
 	sync.Mutex
-	brokerURL  string
-	broker     broker.Broker
-	ticker     *time.Ticker // ticker for heartbeat
-	queue      []string
-	connecting bool
+	brokerURL string
+	broker    broker.Broker
+	ticker    *time.Ticker // ticker for heartbeat
+	queue     []string
 
-	taskExecuted uint64
+	ch chan *broker.Message
 }
 
 // Connect to broker. Returns an error if connection fails.
-func (manager *workerManager) Connect() error {
+func (manager *workerManager) Connect(ignoreErr bool) error {
 	broker, err := broker.NewBroker(manager.brokerURL)
 	if err != nil {
-		log.Fatal("Failed to connect to broker: ", err)
+		if ignoreErr {
+			log.Println("Failed to connect to broker: ", err)
+		} else {
+			log.Fatal("Failed to connect to broker: ", err)
+		}
 		return err
 	}
 
@@ -38,7 +41,7 @@ func (manager *workerManager) Connect() error {
 	return nil
 }
 
-func merge(cs ...<-chan *broker.Message) <-chan *broker.Message {
+func merge(cs ...<-chan *broker.Message) chan *broker.Message {
 	var wg sync.WaitGroup
 	out := make(chan *broker.Message)
 
@@ -69,24 +72,16 @@ func merge(cs ...<-chan *broker.Message) <-chan *broker.Message {
 
 // Start worker runs the worker command
 func (manager *workerManager) Start(queues []string) {
-	// sigs := make(chan os.Signal, 1)
-	// done := make(chan bool, 1)
-
-	// signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	// go func() {
-	// 	<-sigs // listen to signals
-	// 	manager.Stop()
-	// 	manager.Close()
-	// 	log.Println("gocelery stopped.")
-	// 	done <- true // send signals to done
-	// }()
-
 	log.Println("Worker is now running")
 	// now loops to wait for messages
 	manager.sendWorkerEvent(WorkerOnline)
 
-	// start hearbeat
-	manager.startHeartbeat()
+	if manager.ch != nil {
+		close(manager.ch)
+	} else {
+		// start hearbeat
+		manager.startHeartbeat()
+	}
 
 	// start getting tasks
 	taskChannels := make([]<-chan *broker.Message, 3)
@@ -94,15 +89,12 @@ func (manager *workerManager) Start(queues []string) {
 		taskChannel := manager.broker.GetTasks(queue)
 		taskChannels = append(taskChannels, taskChannel)
 	}
-	ch := merge(taskChannels...)
+	manager.ch = merge(taskChannels...)
 	for {
 		select {
-		// case <-done:
-		// 	// log.Debug("Received done signal")
-		// 	return
-		case message, ok := <-ch:
+		case message, ok := <-manager.ch:
 			if !ok {
-				log.Println("channel close")
+				log.Println("close old message channel")
 				return
 			}
 			// log.Println("Message type: ", message.ContentType, " body:", string(message.Body))
@@ -151,13 +143,12 @@ func (manager *workerManager) Start(queues []string) {
 }
 
 func (manager *workerManager) Reconnect() {
-	if !manager.connecting {
-		manager.connecting = true
-		manager.Close()
-		err := manager.broker.Connect(manager.brokerURL)
-		log.Println("connect to", manager.brokerURL, err)
-		manager.connecting = false
-	}
+	manager.Lock()
+	defer manager.Unlock()
+
+	manager.Close()
+	err := manager.broker.Connect(manager.brokerURL)
+	log.Println("connect to", manager.brokerURL, err)
 }
 
 // PublishTask sends a task to task queue as a client
@@ -218,14 +209,19 @@ func (manager *workerManager) sendTaskEvent(eventType EventType, payload []byte)
 
 // Send Worker Events
 func (manager *workerManager) sendWorkerEvent(eventType EventType) {
+	manager.Lock()
+	defer manager.Unlock()
 	workerEventPayload, _ := json.Marshal(NewWorkerEvent(eventType))
 	err := manager.broker.PublishTaskEvent(strings.Replace(eventType.RoutingKey(), "-", ".", -1),
 		&broker.Message{Timestamp: time.Now(), ContentType: JSON, Body: workerEventPayload})
 	if err != nil {
 		log.Println(err)
 		manager.Close()
-		manager.Connect()
-		manager.Start(manager.queue)
+		err2 := manager.Connect(true)
+		if err2 == nil {
+			go manager.Start(manager.queue)
+		}
+		log.Println("worker reconnect", err2)
 	}
 }
 
@@ -278,11 +274,6 @@ func (manager *workerManager) runTask(task *Task) (*TaskResult, error) {
 			start := time.Now()
 			result, err := execute(task)
 			elapsed := time.Since(start)
-
-			manager.Lock()
-			manager.taskExecuted = manager.taskExecuted + 1
-			// log.Printf("Executed task [%s] [%s] [%s] in %f seconds\n", task.Task, task.ID, result, elapsed.Seconds())
-			manager.Unlock()
 
 			if err != nil {
 				// log.Printf("Failed to execute task [%s]: %s\n", task.Task, err)

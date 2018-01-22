@@ -43,7 +43,7 @@ func New(config *Config) *GoCelery {
 	}
 
 	// try connect to worker
-	if gocelery.workerManager.Connect() != nil {
+	if gocelery.workerManager.Connect(false) != nil {
 		panic(fmt.Sprintf("Failed to connect to broker: %s", config.BrokerURL))
 	}
 	// start cron work
