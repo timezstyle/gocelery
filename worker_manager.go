@@ -72,10 +72,11 @@ func merge(cs ...<-chan *broker.Message) chan *broker.Message {
 
 // Start worker runs the worker command
 func (manager *workerManager) Start(queues []string) {
-	log.Println("Worker is now running")
+	log.Println("Worker sendWorkerEvent")
 	// now loops to wait for messages
 	manager.sendWorkerEvent(WorkerOnline)
 
+	log.Println("Worker after sendWorkerEvent")
 	if manager.ch != nil {
 		close(manager.ch)
 	} else {
@@ -90,6 +91,7 @@ func (manager *workerManager) Start(queues []string) {
 		taskChannels = append(taskChannels, taskChannel)
 	}
 	manager.ch = merge(taskChannels...)
+	log.Println("Worker is now running")
 	for {
 		select {
 		case message, ok := <-manager.ch:
