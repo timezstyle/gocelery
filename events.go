@@ -80,7 +80,7 @@ func NewTaskReceivedEvent(task *Task) map[string]interface{} {
 //NewTaskFailedEvent creates new event for task failed
 func NewTaskFailedEvent(task *Task, taskResult *TaskResult, err error) map[string]interface{} {
 	taskEvent := map[string]interface{}{
-		"type":      TaskReceived,
+		"type":      TaskFailed,
 		"uuid":      task.ID,
 		"exception": err.Error(),
 		"traceback": taskResult.TraceBack,
@@ -93,7 +93,7 @@ func NewTaskFailedEvent(task *Task, taskResult *TaskResult, err error) map[strin
 //NewTaskSucceedEvent creates new event for task succeeded
 func NewTaskSucceedEvent(task *Task, taskResult *TaskResult, runtime time.Duration) map[string]interface{} {
 	taskEvent := map[string]interface{}{
-		"type":      TaskReceived,
+		"type":      TaskSucceeded,
 		"uuid":      task.ID,
 		"result":    taskResult.Result,
 		"runtime":   runtime.Seconds(),
@@ -106,7 +106,7 @@ func NewTaskSucceedEvent(task *Task, taskResult *TaskResult, runtime time.Durati
 //NewTaskStartedEvent creates new event for task started
 func NewTaskStartedEvent(task *Task) map[string]interface{} {
 	taskEvent := map[string]interface{}{
-		"type":      TaskReceived,
+		"type":      TaskStarted,
 		"uuid":      task.ID,
 		"pid":       pid,
 		"hostname":  hostname,

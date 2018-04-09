@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
@@ -110,13 +109,13 @@ func (manager *workerManager) Start(queues []string) {
 					if err == nil {
 						task.ContentType = message.ContentType // stores the content type for the task
 						// publish task received event
-						// taskEventPayload, _ := serializer.Serialize(NewTaskReceivedEvent(&task))
-						// manager.broker.PublishTaskEvent(strings.Replace(TaskReceived.RoutingKey(), "-", ".", -1),
-						// 	&broker.Message{
-						// 		Timestamp:   time.Now(),
-						// 		ContentType: message.ContentType,
-						// 		Body:        taskEventPayload,
-						// 	})
+						taskEventPayload, _ := serializer.Serialize(NewTaskReceivedEvent(&task))
+						manager.broker.PublishTaskEvent(TaskReceived.RoutingKey(),
+							&broker.Message{
+								Timestamp:   time.Now(),
+								ContentType: message.ContentType,
+								Body:        taskEventPayload,
+							})
 						// log.Debug("Processing task: ", task.Task, " ID:", task.ID)
 
 						// check eta
@@ -205,7 +204,7 @@ func (manager *workerManager) startHeartbeat() {
 }
 
 func (manager *workerManager) sendTaskEvent(eventType EventType, payload []byte) {
-	manager.broker.PublishTaskEvent(strings.Replace(eventType.RoutingKey(), "-", ".", -1),
+	manager.broker.PublishTaskEvent(eventType.RoutingKey(),
 		&broker.Message{Timestamp: time.Now(), ContentType: JSON, Body: payload})
 }
 
@@ -214,7 +213,7 @@ func (manager *workerManager) sendWorkerEvent(eventType EventType) {
 	manager.Lock()
 	defer manager.Unlock()
 	workerEventPayload, _ := json.Marshal(NewWorkerEvent(eventType))
-	err := manager.broker.PublishTaskEvent(strings.Replace(eventType.RoutingKey(), "-", ".", -1),
+	err := manager.broker.PublishTaskEvent(eventType.RoutingKey(),
 		&broker.Message{Timestamp: time.Now(), ContentType: JSON, Body: workerEventPayload})
 	if err != nil {
 		log.Println(err)

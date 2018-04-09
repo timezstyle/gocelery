@@ -105,8 +105,8 @@ func (b *RabbitMqBroker) GetTasks(queueName string) <-chan *broker.Message {
 		// log.Infof("Waiting for tasks at: %s", b.amqpURL)
 		deliveries, err := b.channel.Consume(
 			queueName,
-			"",   // Consumer
-			true, // AutoAck
+			"",    // Consumer
+			false, // AutoAck
 			false, false, false, nil)
 		if err != nil {
 			// log.Error("Failed to consume task messages: ", err)
